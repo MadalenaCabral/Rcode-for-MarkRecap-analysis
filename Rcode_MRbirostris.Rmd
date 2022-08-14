@@ -1,0 +1,197 @@
+
+---
+title: "The influence of El Niño Southern Oscillation on the population dynamics of oceanic manta rays in Pacific Mexico "
+author: "Madalena Cabral"
+date: '2022'
+output:
+  html_document:
+    code_folding: hide
+    fig_caption: yes
+    force_captions: yes
+    highlight: pygments
+    number_sections: yes
+    theme: cerulean
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  word_document:
+    toc: yes
+    toc_depth: '3'
+  pdf_document:
+    fig_caption: yes
+    keep_tex: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+---
+
+
+Here we use the capture histories to apply models of abundance with 3 environmental variables such as MEI(Multivariate ENSO index), SST(Sea Surface Temperature) and Chl-a (Chlorophyla a concentration). 
+
+
+First we load the data from capture histories "Madalena CH Table.RData" for 48 months 
+And we load "EnvData.RData" with environmental data for all 3 variables.
+
+```{r}
+load("Madalena CH Table.RData")
+load("EnvData.RData")
+
+EnviroData <- EnvData[,3:5]
+EnviroData$time <- 1:52
+
+
+library(RMark)
+library(readxl)
+library(ggplot2)
+library(ggpubr)
+library(xlsx) 
+
+windowsFonts(A = windowsFont("Arial"))
+
+
+
+```
+
+To format the data with no covariates
+```{r}
+dp=process.data(table,model="POPAN")
+ddl=make.design.data(dp)
+str(ddl)
+```
+
+
+We use POPAN modeling for Open populations:
+
+```{r}
+CapHist <- table
+
+CapHist$ch <- substr(table$ch,1,48)
+CapHist <- CapHist[which(CapHist$ch != paste0(c(rep(0,48)),collapse="") ),] # With only 48 months, some of the capture histories at all zeros (we need to remove those)
+
+
+dp=process.data(CapHist,model="POPAN")
+ddl=make.design.data(dp)
+str(ddl)
+
+```
+
+To merge MEI, SST and Chla into ddl:
+
+
+```{r}
+ddl$p=merge_design.covariates(ddl$p,EnviroData)
+ddl$Phi=merge_design.covariates(ddl$Phi,EnviroData)
+ddl$pent=merge_design.covariates(ddl$pent,EnviroData)
+
+```
+
+Now we want to run all possible combinations of variables and select a best model using AIC
+
+Simple model for initial values, to improve model convergence:
+the fixed=list() in p is where you fix detection probability to 0 for unsampled months. So time=c(9,10,11,12,21,22,23,24,33,34,35,36,45,46,47,48) for the unsampled summer months in our Revilla capture history. They are July, August, September and October and last cut November). 
+
+```{r}
+meses0 <- c(1,9,10,11,12,13,21,22,23,24,25,33,34,35,36,37,45,46,47,48)
+Meses0<-as.factor(meses0)
+initial=mark(dp,ddl,model.parameters=list(p=list(formula=~1,fixed=list(time=Meses0,value=0)),Phi=list(formula=~1),pent=list(formula=~1), N=list(formula=~1)))
+```
+
+To run analysis with all combinations of covariates we create the formulas for all Phi, p, pent and N and with create.model.list("POPAN") we can automaticaly create all possible combinations and then run all models and return as a list with class marklist
+
+```{r}
+do_analysis=function()
+{
+  # create formulas for Phi (survival probability) 
+  Phi.dot=list(formula=~1)
+  Phi.time=list(formula=~time)
+  Phi.enso=list(formula=~MEI)
+  Phi.chla=list(formula=~Chla)
+  Phi.sst=list(formula=~SST)
+  
+  
+  #create formulas for p (capture probability)
+  p.dot=list(formula=~1, fixed=list(time=Meses0,value=0))
+  p.time=list(formula=~time, fixed=list(time=Meses0,value=0))
+  p.enso=list(formula=~MEI, fixed=list(time=Meses0,value=0))
+  p.chla=list(formula=~Chla, fixed=list(time=Meses0,value=0))
+  p.sst=list(formula=~SST, fixed=list(time=Meses0,value=0))
+ 
+  #create formulas for pent (entry propability)
+  pent.dot=list(formula=~1)
+  pent.time=list(formula=~time)
+  pent.enso=list(formula=~MEI)
+  pent.chla=list(formula=~Chla)
+  pent.sst=list(formula=~SST)
+  
+  
+  #create formula for N. (population size) We keep this one constant
+  N=list(formula=~1)
+  
+    # create all combinations
+  cml=create.model.list("POPAN")
+  
+  # run all models and return as a list with class marklist
+  results=mark.wrapper(cml,data=dp,ddl=ddl,output=FALSE,silent=TRUE, initial=initial)
+  return(results)
+}
+revilla.results=do_analysis()
+revilla.results
+```
+
+After looking at the model table, we can re-run the top models as selected by AIC criteria to pull out all of the parameter estimates. 
+
+```{r}
+top.model = mark(dp,ddl,model.parameters=list(p=list(formula=~time,fixed=list(time=c(1,9,10,11,12,13,21,22,23,24,25,33,34,35,36,37,45,46,47,48),value=0)),Phi=list(formula=~MEI),pent=list(formula=~1), N=list(formula=~1)))
+
+second.model= mark(dp,ddl,model.parameters=list(p=list(formula=~time,fixed=list(time=c(1,9,10,11,12,13,21,22,23,24,25,33,34,35,36,37,45,46,47,48),value=0)),Phi=list(formula=~MEI),pent=list(formula=~Chla), N=list(formula=~1)))
+
+```
+
+To view superpopulation size
+
+```{r}
+
+top.model$results$derived$`N Population Size`
+
+second.model$results$derived$`N Population Size`
+```
+
+To write table with monthly abundances
+
+```{r}
+write.table(top.model$results$derived$`N Population Size`,file="abundancetop.model.txt")
+write.table(second.model$results$derived$`N Population Size`,file="abundancesecond.model.txt")
+```
+ 
+ 
+```{r}
+summary(top.model,se=T)$reals$N
+summary(second.model,se=T)$reals$N
+```
+ 
+For a table with all Parameter estimates
+
+```{r}
+parameter.estimates<-top.model$results$real
+parameter.estimates
+
+write.csv(parameter.estimates,"Param_Est_Real.csv",row.names = T)
+
+parameter.estimates2<-second.model$results$real
+parameter.estimates2
+
+write.csv(parameter.estimates2,"Param_Est_Real.csv",row.names = T)
+
+write.table(CapHist,file="abundancetop.model.txt")
+
+```
+
+```{r}
+parameter.estimates<-top.model$results$real
+parameter.estimates
+
+parameter.estimates2<-second.model$results$real
+parameter.estimates2
+```
+
+
