@@ -9,6 +9,7 @@ Here we describe how you can obtain the results by running the Rcode using captu
 
 Feel free to drop us any comments at madalenamdc21@gmail.com
 
+Rcode below:
 
 Here we use the capture histories to apply models of abundance with 3 environmental variables such as MEI(Multivariate ENSO index), SST(Sea Surface Temperature) and Chl-a (Chlorophyla a concentration). 
 
